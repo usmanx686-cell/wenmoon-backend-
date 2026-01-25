@@ -3,7 +3,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: wenmoon-db
+    container_name: wenmoon-postgres
     environment:
       POSTGRES_DB: wenmoon_db
       POSTGRES_USER: wenmoon_user
@@ -15,6 +15,11 @@ services:
       - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - wenmoon-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wenmoon_user -d wenmoon_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -25,6 +30,12 @@ services:
       - redis_data:/data
     networks:
       - wenmoon-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: .
@@ -45,9 +56,12 @@ services:
     volumes:
       - ./src:/app/src
       - ./uploads:/app/uploads
+      - ./logs:/app/logs
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - wenmoon-network
     command: npm run dev
