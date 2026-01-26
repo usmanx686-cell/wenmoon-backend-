@@ -10,7 +10,7 @@ const User = sequelize.define('User', {
     autoIncrement: true
   },
   email: {
-    type: DataTypes.STRING(255),
+    type: DataTypes.STRING,
     allowNull: false,
     unique: true,
     validate: {
@@ -18,16 +18,17 @@ const User = sequelize.define('User', {
     }
   },
   username: {
-    type: DataTypes.STRING(100),
+    type: DataTypes.STRING,
     unique: true,
     allowNull: true
   },
   password_hash: {
-    type: DataTypes.STRING(255),
-    allowNull: true // Can be null for social logins
+    type: DataTypes.STRING,
+    allowNull: false
   },
   wallet_address: {
-    type: DataTypes.STRING(255),
+    type: DataTypes.STRING,
+    allowNull: true,
     validate: {
       isEthereumAddress(value) {
         if (value && !/^0x[a-fA-F0-9]{40}$/.test(value)) {
@@ -42,7 +43,8 @@ const User = sequelize.define('User', {
     allowNull: false
   },
   referred_by: {
-    type: DataTypes.STRING(50)
+    type: DataTypes.STRING(50),
+    allowNull: true
   },
   moon_points: {
     type: DataTypes.INTEGER,
@@ -63,20 +65,20 @@ const User = sequelize.define('User', {
     defaultValue: false
   },
   telegram_id: {
-    type: DataTypes.STRING(100),
-    unique: true,
+    type: DataTypes.STRING,
     allowNull: true
   },
   google_id: {
-    type: DataTypes.STRING(100),
-    unique: true,
+    type: DataTypes.STRING,
     allowNull: true
   },
   ip_address: {
-    type: DataTypes.STRING(45) // IPv6 max length
+    type: DataTypes.STRING,
+    allowNull: true
   },
   last_login: {
-    type: DataTypes.DATE
+    type: DataTypes.DATE,
+    allowNull: true
   },
   is_active: {
     type: DataTypes.BOOLEAN,
@@ -85,18 +87,6 @@ const User = sequelize.define('User', {
   is_admin: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
-  },
-  profile_image: {
-    type: DataTypes.STRING(500)
-  },
-  twitter_handle: {
-    type: DataTypes.STRING(100)
-  },
-  discord_id: {
-    type: DataTypes.STRING(100)
-  },
-  telegram_username: {
-    type: DataTypes.STRING(100)
   }
 }, {
   tableName: 'users',
@@ -104,51 +94,25 @@ const User = sequelize.define('User', {
   underscored: true,
   hooks: {
     beforeCreate: async (user) => {
-      // Hash password if provided
+      // Hash password
       if (user.password_hash) {
         const salt = await bcrypt.genSalt(10);
         user.password_hash = await bcrypt.hash(user.password_hash, salt);
       }
       
-      // Generate unique referral code
+      // Generate referral code if not provided
       if (!user.referral_code) {
-        let code;
-        let isUnique = false;
-        
-        while (!isUnique) {
-          code = crypto.randomBytes(4).toString('hex').toUpperCase();
-          const existingUser = await User.findOne({ where: { referral_code: code } });
-          if (!existingUser) {
-            isUnique = true;
-          }
-        }
-        
-        user.referral_code = code;
+        user.referral_code = crypto.randomBytes(4).toString('hex').toUpperCase();
       }
       
       // Generate username from email if not provided
-      if (!user.username && user.email) {
-        const baseUsername = user.email.split('@')[0];
-        let username = baseUsername;
-        let counter = 1;
-        
-        // Ensure username is unique
-        while (true) {
-          const existingUser = await User.findOne({ where: { username } });
-          if (!existingUser) {
-            break;
-          }
-          username = `${baseUsername}${counter}`;
-          counter++;
-        }
-        
-        user.username = username;
+      if (!user.username) {
+        user.username = user.email.split('@')[0];
       }
     },
-    
     beforeUpdate: async (user) => {
-      // Hash password if it's being changed
-      if (user.changed('password_hash') && user.password_hash) {
+      // Hash password if changed
+      if (user.changed('password_hash')) {
         const salt = await bcrypt.genSalt(10);
         user.password_hash = await bcrypt.hash(user.password_hash, salt);
       }
@@ -158,38 +122,14 @@ const User = sequelize.define('User', {
 
 // Instance methods
 User.prototype.comparePassword = async function(candidatePassword) {
-  if (!this.password_hash) {
-    return false;
-  }
   return await bcrypt.compare(candidatePassword, this.password_hash);
-};
-
-User.prototype.generateAuthToken = function() {
-  const jwt = require('jsonwebtoken');
-  return jwt.sign(
-    { userId: this.id },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE || '7d' }
-  );
-};
-
-User.prototype.generateRefreshToken = function() {
-  const jwt = require('jsonwebtoken');
-  return jwt.sign(
-    { userId: this.id, type: 'refresh' },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d' }
-  );
 };
 
 User.prototype.toJSON = function() {
   const values = Object.assign({}, this.get());
   
-  // Remove sensitive fields
+  // Remove sensitive data
   delete values.password_hash;
-  delete values.google_id;
-  delete values.telegram_id;
-  delete values.ip_address;
   delete values.created_at;
   delete values.updated_at;
   
@@ -205,32 +145,11 @@ User.findByReferralCode = async function(referralCode) {
   return await this.findOne({ where: { referral_code: referralCode } });
 };
 
-User.findByWalletAddress = async function(walletAddress) {
-  return await this.findOne({ 
-    where: { 
-      wallet_address: sequelize.where(
-        sequelize.fn('LOWER', sequelize.col('wallet_address')),
-        walletAddress.toLowerCase()
-      )
-    }
-  });
-};
-
-// Class methods for statistics
-User.getTotalUsers = async function() {
-  return await this.count();
-};
-
-User.getActiveUsers = async function() {
-  return await this.count({ where: { is_active: true } });
-};
-
-User.getTopUsersByPoints = async function(limit = 10) {
-  return await this.findAll({
-    attributes: ['id', 'username', 'email', 'moon_points', 'total_points_earned'],
-    order: [['moon_points', 'DESC']],
-    limit: limit
-  });
+User.incrementPoints = async function(userId, points) {
+  return await this.increment({
+    moon_points: points,
+    total_points_earned: points
+  }, { where: { id: userId } });
 };
 
 module.exports = User;
