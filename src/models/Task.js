@@ -13,11 +13,12 @@ const Task = sequelize.define('Task', {
     allowNull: false
   },
   name: {
-    type: DataTypes.STRING(255),
+    type: DataTypes.STRING,
     allowNull: false
   },
   description: {
-    type: DataTypes.TEXT
+    type: DataTypes.TEXT,
+    allowNull: true
   },
   points: {
     type: DataTypes.INTEGER,
@@ -49,17 +50,6 @@ const Task = sequelize.define('Task', {
     validate: {
       min: 0
     }
-  },
-  verification_required: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false
-  },
-  verification_type: {
-    type: DataTypes.STRING(50)
-  },
-  metadata: {
-    type: DataTypes.JSONB,
-    defaultValue: {}
   }
 }, {
   tableName: 'tasks',
@@ -73,40 +63,11 @@ Task.findByTaskId = async function(taskId) {
 };
 
 Task.getActiveTasks = async function() {
-  return await this.findAll({ 
-    where: { is_active: true },
-    order: [['points', 'DESC']]
-  });
+  return await this.findAll({ where: { is_active: true } });
 };
 
-Task.getTasksByType = async function(type) {
-  return await this.findAll({ 
-    where: { 
-      is_active: true,
-      task_type: type 
-    }
-  });
-};
-
-Task.getTotalTasks = async function() {
-  return await this.count({ where: { is_active: true } });
-};
-
-// Instance methods
-Task.prototype.canComplete = function(lastCompletion) {
-  if (!lastCompletion) return true;
-  
-  const cooldownMs = this.cooldown_hours * 60 * 60 * 1000;
-  const nextAvailable = new Date(lastCompletion.getTime() + cooldownMs);
-  
-  return new Date() >= nextAvailable;
-};
-
-Task.prototype.getNextAvailableTime = function(lastCompletion) {
-  if (!lastCompletion) return new Date();
-  
-  const cooldownMs = this.cooldown_hours * 60 * 60 * 1000;
-  return new Date(lastCompletion.getTime() + cooldownMs);
+Task.getByType = async function(taskType) {
+  return await this.findAll({ where: { task_type: taskType, is_active: true } });
 };
 
 module.exports = Task;
