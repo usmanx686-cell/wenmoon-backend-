@@ -1,64 +1,70 @@
-const { sequelize } = require('../config/database');
-const path = require('path');
-const fs = require('fs');
-const Sequelize = require('sequelize');
-const basename = path.basename(__filename);
-const db = {};
+const { sequelize, Op } = require('../config/database');
+const logger = require('../utils/logger');
 
-// Import all models
-fs.readdirSync(__dirname)
-  .filter(file => {
-    return (
-      file.indexOf('.') !== 0 &&
-      file !== basename &&
-      file.slice(-3) === '.js' &&
-      file.indexOf('.test.js') === -1
-    );
-  })
-  .forEach(file => {
-    const model = require(path.join(__dirname, file));
-    db[model.name] = model;
-  });
-
-// Associate models if associations exist
-Object.keys(db).forEach(modelName => {
-  if (db[modelName].associate) {
-    db[modelName].associate(db);
-  }
-});
-
-db.sequelize = sequelize;
-db.Sequelize = Sequelize;
+// Import models
+const User = require('./User');
+const Task = require('./Task');
+const IPAddress = require('./IPAddress');
+const Session = require('./Session');
+const ActivityLog = require('./ActivityLog');
+const UserTask = require('./UserTask');
+const Referral = require('./Referral');
+const WalletConnection = require('./WalletConnection');
+const AdminLog = require('./AdminLog');
 
 // Define associations
-const { User, Task, UserTask, IPAddress, Session, ActivityLog, Referral, WalletConnection } = db;
-
-// User associations
-User.hasMany(UserTask, { foreignKey: 'user_id', as: 'completedTasks' });
 User.hasMany(Session, { foreignKey: 'user_id', as: 'sessions' });
-User.hasMany(ActivityLog, { foreignKey: 'user_id', as: 'activityLogs' });
+User.hasMany(ActivityLog, { foreignKey: 'user_id', as: 'activities' });
+User.hasMany(UserTask, { foreignKey: 'user_id', as: 'completedTasks' });
+User.hasMany(WalletConnection, { foreignKey: 'user_id', as: 'wallets' });
 User.hasMany(Referral, { foreignKey: 'referrer_id', as: 'referralsMade' });
 User.hasMany(Referral, { foreignKey: 'referred_id', as: 'referralsReceived' });
-User.hasMany(WalletConnection, { foreignKey: 'user_id', as: 'wallets' });
 
-// Task associations
 Task.hasMany(UserTask, { foreignKey: 'task_id', sourceKey: 'task_id', as: 'completions' });
 
-// UserTask associations
 UserTask.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 UserTask.belongsTo(Task, { foreignKey: 'task_id', targetKey: 'task_id', as: 'task' });
 
-// Session associations
 Session.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
-
-// ActivityLog associations
 ActivityLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+WalletConnection.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
-// Referral associations
 Referral.belongsTo(User, { foreignKey: 'referrer_id', as: 'referrer' });
 Referral.belongsTo(User, { foreignKey: 'referred_id', as: 'referred' });
 
-// WalletConnection associations
-WalletConnection.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+// Initialize models
+const models = {
+  User,
+  Task,
+  IPAddress,
+  Session,
+  ActivityLog,
+  UserTask,
+  Referral,
+  WalletConnection,
+  AdminLog,
+  sequelize,
+  Op
+};
 
-module.exports = db;
+// Sync all models with database
+const syncDatabase = async (force = false) => {
+  try {
+    if (force) {
+      await sequelize.sync({ force: true });
+      logger.warn('Database synced with force. All data was lost!');
+    } else {
+      await sequelize.sync({ alter: true });
+      logger.info('Database synced successfully.');
+    }
+    return true;
+  } catch (error) {
+    logger.error('Database sync failed:', error);
+    return false;
+  }
+};
+
+module.exports = {
+  ...models,
+  syncDatabase
+};
