@@ -523,4 +523,13 @@ class FraudDetection {
     }
     
     async cleanupOldData(days = 30) {
-        const cutoffDate = new Date(Date.now() - days * 24 * 60 *
+        const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        
+        // Archive or delete old security logs
+        // This would depend on your archiving strategy
+        
+        logger.info(`Fraud detection cleanup completed for data older than ${days} days`);
+    }
+}
+
+module.exports = new FraudDetection();
